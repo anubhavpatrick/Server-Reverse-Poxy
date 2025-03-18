@@ -4,7 +4,7 @@
     "log_backup_count": 5,
     "reverse_proxy_map": {
       "192.168.12.2:31388": {
-        "remote_ip": "103.211.57.87",
+        "remote_ip": "REPLACE_WITH_REMOTE_IP",
         "remote_port": 31380
       }
     },
