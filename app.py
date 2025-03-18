@@ -30,18 +30,6 @@ from aiohttp import web
 import aiohttp
 import json
 
-# Set up the logger with rotating log files
-log_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-log_handler = RotatingFileHandler(config["log_file_path"], maxBytes=config["log_max_size"], backupCount=config["log_backup_count"])
-log_handler.setFormatter(log_formatter)
-
-logger = logging.getLogger('ProxyLogger')
-
-# Set log level dynamically based on config
-log_level = getattr(logging, config["log_level"].upper(), logging.WARNING)
-logger.setLevel(log_level)
-logger.addHandler(log_handler)
-
 # Load the configuration from the config.json file
 def load_config(config_path='config.json'):
     try:
@@ -56,6 +44,19 @@ def load_config(config_path='config.json'):
 
 # Load configuration
 config = load_config()
+
+# Set up the logger with rotating log files
+log_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+log_handler = RotatingFileHandler(config["log_file_path"], maxBytes=config["log_max_size"], backupCount=config["log_backup_count"])
+log_handler.setFormatter(log_formatter)
+
+logger = logging.getLogger('ProxyLogger')
+
+# Set log level dynamically based on config
+log_level = getattr(logging, config["log_level"].upper(), logging.WARNING)
+logger.setLevel(log_level)
+logger.addHandler(log_handler)
+
 
 # Reverse proxy mapping from config
 reverse_proxy_map = {}
