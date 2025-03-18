@@ -28,21 +28,33 @@ import logging
 from logging.handlers import RotatingFileHandler
 from aiohttp import web
 import aiohttp
+import json
+
+# Load the configuration from the config.json file
+def load_config(config_path='config.json'):
+    with open(config_path, 'r') as f:
+        return json.load(f)
+
+# Load configuration
+config = load_config()
 
 # Set up the logger with rotating log files
 log_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-log_handler = RotatingFileHandler('/app/logs/proxy_logs.log', maxBytes=10 * 1024 * 1024, backupCount=5)  # Max 10MB per log file, keep 5 backups
+log_handler = RotatingFileHandler(config["log_file_path"], maxBytes=config["log_max_size"], backupCount=config["log_backup_count"])
 log_handler.setFormatter(log_formatter)
 
 logger = logging.getLogger('ProxyLogger')
-logger.setLevel(logging.WARNING)  # Set log level to WARNING to log only warnings, errors, and critical issues
+
+# Set log level dynamically based on config
+log_level = getattr(logging, config["log_level"].upper(), logging.WARNING)
+logger.setLevel(log_level)
 logger.addHandler(log_handler)
 
-# This dictionary maps the private IP/port (for local clients) to public IP/port of remote services
-reverse_proxy_map = {
-    ('192.168.12.2', 31388): ('117.55.241.77', 31380),
-    # Add more mappings as needed
-}
+# Reverse proxy mapping from config
+reverse_proxy_map = {}
+for key, value in config["reverse_proxy_map"].items():
+    ip, port = key.split(':')
+    reverse_proxy_map[(ip, int(port))] = (value["remote_ip"], value["remote_port"])
 
 async def proxy_handler(request):
     """
@@ -75,7 +87,7 @@ async def proxy_handler(request):
     if not remote_ip or not remote_port:
         # Log the details of the error, but do not expose the remote IP to the client
         logger.warning(f"Client {client_ip} made a request for {private_ip}:{private_port}{request.rel_url}. "
-                       f"No mapping found.")  # Log as WARNING with client details
+                       "No mapping found.")  # Log as WARNING with client details
         return web.Response(status=404, text="No mapping found for this IP and port")
 
     # Construct the remote URL for the public application
@@ -116,7 +128,7 @@ def run_app():
     logging level set to WARNING).
     """
     logger.info("Starting the proxy server...")  # This line is now suppressed because the log level is set to WARNING
-    web.run_app(app, host='0.0.0.0', port=31388)  # The local server that listens to local clients
+    web.run_app(app, host=config["server"]["host"], port=config["server"]["port"])  # The local server that listens to local clients
 
 # Run the application
 if __name__ == '__main__':

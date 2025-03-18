@@ -1,0 +1,17 @@
+{
+    "log_file_path": "/app/logs/proxy_logs.log",
+    "log_max_size": 10485760, 
+    "log_backup_count": 5,
+    "reverse_proxy_map": {
+      "192.168.12.2:31388": {
+        "remote_ip": "117.55.241.77",
+        "remote_port": 31380
+      }
+    },
+    "server": {
+      "host": "0.0.0.0",
+      "port": 31388
+    },
+    "log_level": "WARNING"
+  }
+  
