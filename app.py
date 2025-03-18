@@ -29,6 +29,25 @@ from logging.handlers import RotatingFileHandler
 from aiohttp import web
 import aiohttp
 import json
+import pytz
+from datetime import datetime
+
+# Define a custom log formatter to use IST time zone
+class ISTFormatter(logging.Formatter):
+    def formatTime(self, record, datefmt=None):
+        # Get the UTC time and convert to IST (UTC+5:30)
+        utc_time = datetime.utcfromtimestamp(record.created)
+        ist_time = utc_time.replace(tzinfo=pytz.utc).astimezone(pytz.timezone('Asia/Kolkata'))
+        
+        # Format the time as per your requirements
+        return ist_time.strftime('%Y-%m-%d %H:%M:%S')
+
+    def format(self, record):
+        # Add the custom formatted time
+        record.asctime = self.formatTime(record, self.datefmt)
+        
+        # Now let the default formatter do the rest (formatting levelname and message)
+        return super().format(record)
 
 # Load the configuration from the config.json file
 def load_config(config_path='config.json'):
@@ -46,7 +65,7 @@ def load_config(config_path='config.json'):
 config = load_config()
 
 # Set up the logger with rotating log files
-log_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+log_formatter = ISTFormatter('%(asctime)s - %(levelname)s - %(message)s')
 log_handler = RotatingFileHandler(config["log_file_path"], maxBytes=config["log_max_size"], backupCount=config["log_backup_count"])
 log_handler.setFormatter(log_formatter)
 
