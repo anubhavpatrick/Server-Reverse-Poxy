@@ -30,14 +30,6 @@ from aiohttp import web
 import aiohttp
 import json
 
-# Load the configuration from the config.json file
-def load_config(config_path='config.json'):
-    with open(config_path, 'r') as f:
-        return json.load(f)
-
-# Load configuration
-config = load_config()
-
 # Set up the logger with rotating log files
 log_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
 log_handler = RotatingFileHandler(config["log_file_path"], maxBytes=config["log_max_size"], backupCount=config["log_backup_count"])
@@ -49,6 +41,21 @@ logger = logging.getLogger('ProxyLogger')
 log_level = getattr(logging, config["log_level"].upper(), logging.WARNING)
 logger.setLevel(log_level)
 logger.addHandler(log_handler)
+
+# Load the configuration from the config.json file
+def load_config(config_path='config.json'):
+    try:
+        with open(config_path, 'r') as f:
+            return json.load(f)
+    except FileNotFoundError:
+        logger.error(f"Configuration file '{config_path}' not found.")
+        raise # It will raise 
+    except json.JSONDecodeError:
+        logger.error(f"Configuration file '{config_path}' is not valid JSON.")
+        raise
+
+# Load configuration
+config = load_config()
 
 # Reverse proxy mapping from config
 reverse_proxy_map = {}
