@@ -73,8 +73,9 @@ async def proxy_handler(request):
     remote_ip, remote_port = reverse_proxy_map.get((private_ip, private_port), (None, None))
 
     if not remote_ip or not remote_port:
+        # Log the details of the error, but do not expose the remote IP to the client
         logger.warning(f"Client {client_ip} made a request for {private_ip}:{private_port}{request.rel_url}. "
-                       "No mapping found.")  # Log as WARNING with client details
+                       f"No mapping found.")  # Log as WARNING with client details
         return web.Response(status=404, text="No mapping found for this IP and port")
 
     # Construct the remote URL for the public application
@@ -89,15 +90,17 @@ async def proxy_handler(request):
 
                 # Log the response status as a WARNING if needed
                 if response.status >= 400:
+                    # Log the remote IP for internal monitoring but don't expose it to the client
                     logger.warning(f"Client {client_ip} made a request for {remote_url}. "
                                    f"Received status: {response.status}.")  # Log warnings on 4xx/5xx errors
 
                 return web.Response(status=response.status, body=data, headers=response.headers)
 
     except Exception as e:
-        logger.error(f"Error forwarding request from client {client_ip} for {request.rel_url}: {str(e)}")  # Log as ERROR with client details
-        return web.Response(status=500, text=f"Error forwarding request: {str(e)}")
-
+        # Log the error with the remote IP for internal debugging
+        logger.error(f"Error forwarding request from client {client_ip} for {request.rel_url} to remote IP {remote_ip}: {str(e)}")  # Log as ERROR with client details and remote IP
+        # Return a generic error message to the client, without exposing the remote IP
+        return web.Response(status=500, text="Error forwarding request. Please try again later.")
 
 # Main application setup
 app = web.Application()
@@ -106,7 +109,7 @@ app.router.add_route('*', '/{path:.*}', proxy_handler)  # Catch all routes and f
 def run_app():
     """
     Starts the proxy server and runs the application. The server listens on the local host 
-    (`0.0.0.0`) and port 8080, handling incoming requests from local clients and forwarding them 
+    (`0.0.0.0`) and port 31388, handling incoming requests from local clients and forwarding them 
     to the corresponding remote services.
     
     The server logs the startup process as an info-level message (suppressed in this case due to the 
