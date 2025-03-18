@@ -52,9 +52,11 @@ logger.addHandler(log_handler)
 
 # Reverse proxy mapping from config
 reverse_proxy_map = {}
+local_ip = None
+local_port = None
 for key, value in config["reverse_proxy_map"].items():
-    ip, port = key.split(':')
-    reverse_proxy_map[(ip, int(port))] = (value["remote_ip"], value["remote_port"])
+    local_ip, local_port = key.split(':')
+    reverse_proxy_map[(local_ip, int(local_port))] = (value["remote_ip"], value["remote_port"])
 
 async def proxy_handler(request):
     """
@@ -128,7 +130,7 @@ def run_app():
     logging level set to WARNING).
     """
     logger.info("Starting the proxy server...")  # This line is now suppressed because the log level is set to WARNING
-    web.run_app(app, host=config["server"]["host"], port=config["server"]["port"])  # The local server that listens to local clients
+    web.run_app(app, host=config["server"]["host"], port=local_port)  # The local server that listens to local clients
 
 # Run the application
 if __name__ == '__main__':
