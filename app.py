@@ -86,61 +86,103 @@ for key, value in config["reverse_proxy_map"].items():
     reverse_proxy_map[(local_ip, int(local_port))] = (value["remote_ip"], value["remote_port"])
 
 async def proxy_handler(request):
-    """
-    Handles incoming HTTP requests from local clients, maps them to a remote public IP and port,
-    forwards the request to the remote service, and returns the response back to the client.
-    
-    The function also logs errors, warnings, and critical issues based on the operation. 
-    Only warning and error-level logs are recorded to reduce unnecessary logging verbosity.
-    
-    Args:
-        request (aiohttp.web.Request): The incoming HTTP request from the local client.
-        
-    Returns:
-        aiohttp.web.Response: The response to be sent back to the local client.
-        If no mapping is found for the requested IP and port, a 404 response is returned.
-        If an error occurs while forwarding the request, a 500 response is returned.
-    
-    Logs:
-        - WARNING: Logged if no mapping for the private IP/port is found or if the response status 
-                  from the remote server is a 4xx or 5xx error.
-        - ERROR: Logged if there is an exception while forwarding the request to the remote server.
-    """
-    private_ip = request.host.split(':')[0]  # Extract the private IP
-    private_port = request.url.port  # Get the port from the request URL
-    client_ip = request.remote  # The IP address of the client making the request
+    private_ip = request.host.split(':')[0]
+    private_port = request.url.port
+    client_ip = request.remote
 
-    # Only log warnings, errors, and critical issues (info logging is now suppressed)
     remote_ip, remote_port = reverse_proxy_map.get((private_ip, private_port), (None, None))
 
     if not remote_ip or not remote_port:
-        # Log the details of the error, but do not expose the remote IP to the client
         logger.warning(f"Client {client_ip} made a request for {private_ip}:{private_port}{request.rel_url}. "
-                       "No mapping found.")  # Log as WARNING with client details
+                       "No mapping found.")
         return web.Response(status=404, text="No mapping found for this IP and port")
 
-    # Construct the remote URL for the public application
     remote_url = f'http://{remote_ip}:{remote_port}{request.rel_url}'
-
+    
+    # Check if this is a WebSocket request
+    is_websocket = request.headers.get('Upgrade', '').lower() == 'websocket'
+    
+    if is_websocket:
+        # Handle WebSocket connections
+        try:
+            # Create a WebSocket connection to the remote server
+            ws_client = web.WebSocketResponse()
+            await ws_client.prepare(request)
+            
+            # Connect to the remote WebSocket server
+            async with aiohttp.ClientSession() as session:
+                # Prepare headers for the WebSocket connection
+                ws_headers = {k: v for k, v in request.headers.items() 
+                             if k.lower() not in ('host', 'origin')}
+                
+                # Adjust the origin header to match the remote server
+                ws_headers['Origin'] = f'http://{remote_ip}:{remote_port}'
+                
+                async with session.ws_connect(
+                    remote_url, 
+                    headers=ws_headers,
+                    protocols=request.headers.get('Sec-WebSocket-Protocol', '').split(',')
+                ) as ws_server:
+                    # Create bidirectional communication
+                    async def forward_ws_messages(source, destination):
+                        async for msg in source:
+                            if msg.type == aiohttp.WSMsgType.TEXT:
+                                await destination.send_str(msg.data)
+                            elif msg.type == aiohttp.WSMsgType.BINARY:
+                                await destination.send_bytes(msg.data)
+                            elif msg.type in (aiohttp.WSMsgType.CLOSED, aiohttp.WSMsgType.ERROR):
+                                break
+                    
+                    # Create tasks for bidirectional communication
+                    import asyncio
+                    client_to_server = asyncio.create_task(forward_ws_messages(ws_client, ws_server))
+                    server_to_client = asyncio.create_task(forward_ws_messages(ws_server, ws_client))
+                    
+                    # Wait for either connection to close
+                    try:
+                        await asyncio.gather(client_to_server, server_to_client)
+                    except asyncio.CancelledError:
+                        client_to_server.cancel()
+                        server_to_client.cancel()
+            
+            return ws_client
+                
+        except Exception as e:
+            logger.error(f"Error handling WebSocket for {remote_url}: {str(e)}")
+            return web.Response(status=500, text="Error establishing WebSocket connection")
+    
+    # Handle regular HTTP requests (your existing code)
     try:
+        data = await request.read() if request.body_exists else None
+        headers = {k: v for k, v in request.headers.items() if k.lower() != 'host'}
+        
         async with aiohttp.ClientSession() as session:
-            # Forward the request to the remote application
-            async with session.request(request.method, remote_url, headers=request.headers) as response:
-                # Get the response from the remote service and forward it back to the local client
-                data = await response.read()
-
-                # Log the response status as a WARNING if needed
+            async with session.request(
+                request.method, 
+                remote_url, 
+                headers=headers,
+                data=data,
+                allow_redirects=False
+            ) as response:
+                content = await response.read()
+                
+                client_response = web.Response(
+                    status=response.status,
+                    body=content
+                )
+                
+                for header, value in response.headers.items():
+                    if header.lower() != 'transfer-encoding':
+                        client_response.headers[header] = value
+                
                 if response.status >= 400:
-                    # Log the remote IP for internal monitoring but don't expose it to the client
                     logger.warning(f"Client {client_ip} made a request for {remote_url}. "
-                                   f"Received status: {response.status}.")  # Log warnings on 4xx/5xx errors
-
-                return web.Response(status=response.status, body=data, headers=response.headers)
+                                   f"Received status: {response.status}.")
+                
+                return client_response
 
     except Exception as e:
-        # Log the error with the remote IP for internal debugging
-        logger.error(f"Error forwarding request from client {client_ip} for {request.rel_url} to remote IP {remote_ip}: {str(e)}")  # Log as ERROR with client details and remote IP
-        # Return a generic error message to the client, without exposing the remote IP
+        logger.error(f"Error forwarding request from client {client_ip} for {request.rel_url} to remote IP {remote_ip}: {str(e)}")
         return web.Response(status=500, text="Error forwarding request. Please try again later.")
 
 # Main application setup
