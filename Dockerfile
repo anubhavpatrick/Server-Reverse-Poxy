@@ -7,6 +7,12 @@ WORKDIR /app
 # Copy the Python application files into the container
 COPY . /app
 
+#Update the package list
+RUN apt-get update
+
+# Update pip
+RUN pip install --upgrade pip
+
 # Install the required dependencies (e.g., aiohttp)
 RUN pip install --no-cache-dir -r requirements.txt
 
